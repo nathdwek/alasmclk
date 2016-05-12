@@ -170,13 +170,13 @@ c0:
 
 c0r1r2:
 	mov P0, #001111111b
-	JNB P0.0, cpushed
-	JMP dpushed
-	
-c0r3r4:
-	mov P0, #011101111b
 	JNB P0.0, fpushed
 	JMP epushed
+
+c0r3r4:
+	mov P0, #011101111b
+	JNB P0.0, stoppushed
+	JMP snoozepushed
 
 c1:
 	mov P0, #000111111b
@@ -232,15 +232,23 @@ eightpushed:
 ninepushed:
 apushed:
 bpushed:
-cpushed:
-dpushed:
 epushed:
 fpushed:
 onepushed:
 fourpushed:
 	cpl p2.3
 	LJMP endfiftymsinterrupt
-	
+
+snoozepushed:
+	clr TR2
+	mov 030h, #010
+	LJMP endfiftymsinterrupt
+
+stoppushed:
+	clr TR2
+	setb almstopped
+	LJMP endfiftymsinterrupt
+
 endfiftymsinterrupt:
 	MOV TH0, #03Ch;load the counter with 15535
 	MOV TL0, #0AFh;idem
