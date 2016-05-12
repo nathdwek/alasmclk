@@ -125,6 +125,9 @@
         <tIfile></tIfile>
         <pMon></pMon>
       </DebugOpt>
+<<<<<<< bcfb97ea72e9fa1d59bfd980a3df0c06ed91900b
+      <Breakpoint/>
+=======
       <TargetDriverDllRegistry>
         <SetRegEntry>
           <Number>0</Number>
@@ -141,18 +144,27 @@
           <AccSizeX>0</AccSizeX>
         </Mm>
       </MemoryWindow1>
+>>>>>>> logical part nearly working
       <Tracepoint>
         <THDelay>0</THDelay>
       </Tracepoint>
       <DebugFlag>
         <trace>0</trace>
         <periodic>1</periodic>
+<<<<<<< bcfb97ea72e9fa1d59bfd980a3df0c06ed91900b
+        <aLwin>0</aLwin>
+=======
         <aLwin>1</aLwin>
+>>>>>>> logical part nearly working
         <aCover>0</aCover>
         <aSer1>0</aSer1>
         <aSer2>0</aSer2>
         <aPa>0</aPa>
+<<<<<<< bcfb97ea72e9fa1d59bfd980a3df0c06ed91900b
+        <viewmode>0</viewmode>
+=======
         <viewmode>1</viewmode>
+>>>>>>> logical part nearly working
         <vrSel>0</vrSel>
         <aSym>0</aSym>
         <aTbox>0</aTbox>
