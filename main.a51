@@ -12,10 +12,11 @@ ORG 002Bh
 
 ;counters
 ;register bank 0
-twentyhz equ r0
+twentyhz equ r6
 	
 ;edge detection
 waspushed equ 00h
+wasswitch equ 01h
 
 ;State machine
 ;register bank 0
@@ -39,11 +40,12 @@ init:
 	setb TR0
 	mov twentyhz, #020
 	mov state, #counting
-	setb RS0
-	mov clks, #00;clock of seconds
-	mov clkm, #00;clock of minutes
-	mov clkh, #00;clock of hours
-	clr RS0
+	clr almstopped
+	clr ringingonoff
+	
+	;TEST
+	mov 030h, #010
+	
 	LJMP main
 	  
 main:
@@ -52,35 +54,94 @@ main:
 fiftymsinterrupt:
 	djnz twentyhz, readbutton
 	mov twentyhz, #020
-	setb RS0
-	inc clks;increment the clock of the seconds 
-	cjne clks, #060, readbutton; if the clock is not equal to 60 seconds we jump to the reqdbutton part
-	mov clks, #00
-	inc clkm;increment the clock of the minutes
-	cjne clkm, #060, readbutton; if the clock is not equal to 60 minutes we jump to the reqdbutton part
-	mov clkm, #00
-	inc clkh;increment the clock of the hours
-	cjne clkh, #024, readbutton; if the clock is not equal to 24 hours we jump to the reqdbutton part
-	mov clkh, #00
+	mov r0, #clk_ram
+	inc r0
+	inc @r0
+	cjne @r0, #060, deccntdwn; if the clock is not equal to 60 seconds we jump to the reqdbutton part
+	mov @r0, #00
+	inc r0
+	inc @r0;increment the clock of the minutes
+	cjne @r0, #060, deccntdwn; if the clock is not equal to 60 minutes we jump to the reqdbutton part
+	mov @r0, #00
+	inc r0
+	inc @r0;increment the clock of the hours
+	cjne @r0, #024, deccntdwn; if the clock is not equal to 24 hours we jump to the reqdbutton part
+	mov @r0, #00
+
+deccntdwn:
+	jb TR2, ringing
+	jb almstopped, readbutton
+	mov r0, #alm_ram
+	inc r0
+	cjne @r0, #00, decsec
+	inc r0
+	cjne @r0, #00, decmin
+	inc r0
+	cjne @r0, #00, dechour
+	ljmp boum
+	
+decsec:
+	dec @r0
+	cpl p2.3
+	ljmp readbutton
+
+decmin:
+	cpl p2.4
+	dec @r0
+	dec r0
+	mov @r0, #060
+	ljmp readbutton
+	
+dechour:
+	dec @r0
+	dec r0
+	mov @r0, #060
+	dec r0
+	mov @r1, #060
+	ljmp readbutton
+
+boum:
+	setb TR2
+	ljmp readbutton
+
+ringing:
+	cpl ringingonoff
 
 readbutton:
 	jb P2.6, notpushed;
 	setb waspushed;
-	ljmp buttontoreadkb;
+	ljmp readswitch
 	
 notpushed:
 	jb waspushed, nextstate
 	clr waspushed
-	ljmp buttontoreadkb
+	ljmp readswitch
 	
 nextstate:
 	clr waspushed;
-	cpl p2.4
-	djnz state, buttontoreadkb
+	djnz state, readswitch
 	mov state, #counting
-	ljmp buttontoreadkb	
+	ljmp readswitch
 
-buttontoreadkb:
+readswitch:
+	jb P2.5, swhours
+	mov alm_clk, #alm_ram
+	jb wasswitch, swdiff
+	ljmp switchtoreadkb
+
+swhours:
+	mov alm_clk, #clk_ram
+	jnb wasswitch, swdiff
+	ljmp switchtoreadkb
+
+swdiff:
+	mov state, #counting
+	mov C, P2.5
+	mov wasswitch, C
+	cpl p2.4
+
+switchtoreadkb:
+	jb TR2, readkb
 	cjne state, #counting, readkb
 	LJMP endfiftymsinterrupt
 	
