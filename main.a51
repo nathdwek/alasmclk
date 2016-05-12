@@ -7,6 +7,9 @@ ORG 000h
 ORG 000Bh
 	LJMP fiftymsinterrupt
 
+ORG 002Bh
+	LJMP ringinginterrupt
+
 ;counters
 ;register bank 0
 twentyhz equ r0
@@ -16,24 +19,19 @@ waspushed equ 00h
 
 ;State machine
 ;register bank 0
-state equ r1
-counting equ 07
-seth1 equ 06
-seth2 equ 05
-setm1 equ 04
-setm2 equ 03
-sets1 equ 02
-sets2 equ 01
+state equ r5
+counting equ 04
+seth equ 03
+setm equ 02
+sets equ 01
+ringingonoff equ 02h
+almstopped equ 03h
 
-;timekeeping
-;register bank 1
-clks equ r0
-clkm equ r1
-clkh equ r2
+alm_clk equ r7
+alm_ram equ 02Fh
+clk_ram equ 032h
 
-
-init:	  
-	setb ET0
+init:
 	setb EA
 	mov TMOD, #011h;select both 16 bit counters
 	MOV TH0, #03Ch;load the counter with 15535
@@ -66,7 +64,6 @@ fiftymsinterrupt:
 	mov clkh, #00
 
 readbutton:
-	clr RS0
 	jb P2.6, notpushed;
 	setb waspushed;
 	ljmp buttontoreadkb;
