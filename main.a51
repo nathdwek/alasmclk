@@ -1,6 +1,6 @@
 ;Nathan Dwek -- Ilias Fassi Fihri
 $include(t89c51cc01.inc)
-	
+
 ORG 000h
 	LJMP init
 
@@ -13,7 +13,7 @@ ORG 002Bh
 ;counters
 ;register bank 0
 twentyhz equ r6
-	
+
 ;edge detection
 waspushed equ 00h
 wasswitch equ 01h
@@ -52,15 +52,16 @@ init:
 	mov state, #counting
 	clr almstopped
 	clr ringingonoff
-	
+
 	;TEST
 	mov 030h, #010
-	
+
 	LJMP main
-	  
+
 main:
 	ljmp main
-	
+
+
 fiftymsinterrupt:
 	djnz twentyhz, readbutton
 	mov twentyhz, #020
@@ -89,7 +90,7 @@ deccntdwn:
 	inc r0
 	cjne @r0, #00, dechour
 	ljmp boum
-	
+
 decsec:
 	dec @r0
 	cpl p2.3
@@ -101,7 +102,7 @@ decmin:
 	dec r0
 	mov @r0, #060
 	ljmp readbutton
-	
+
 dechour:
 	dec @r0
 	dec r0
@@ -121,12 +122,12 @@ readbutton:
 	jb P2.6, notpushed;
 	setb waspushed;
 	ljmp readswitch
-	
+
 notpushed:
 	jb waspushed, nextstate
 	clr waspushed
 	ljmp readswitch
-	
+
 nextstate:
 	clr waspushed;
 	djnz state, readswitch
@@ -154,7 +155,7 @@ switchtoreadkb:
 	jb TR2, readkb
 	cjne state, #counting, readkb
 	LJMP endfiftymsinterrupt
-	
+
 readkb:
 	mov P0, #00Fh
 	JNB  P0.0,c0
@@ -162,7 +163,7 @@ readkb:
 	JNB  P0.2,c2
 	JNB  P0.3,c3
 	LJMP endfiftymsinterrupt
-	
+
 c0:
 	mov P0, #000111111b
 	JNB	P0.0, c0r1r2
@@ -187,7 +188,7 @@ c1r1r2:
 	mov P0, #001111111b
 	JNB P0.1, bpushed
 	JMP threepushed
-	
+
 c1r3r4:
 	mov P0, #011101111b
 	JNB P0.1, ninepushed
@@ -202,7 +203,7 @@ c2r1r2:
 	mov P0, #001111111b
 	JNB P0.2, zeropushed
 	JMP twopushed
-	
+
 c2r3r4:
 	mov P0, #011101111b
 	JNB P0.2, eightpushed
@@ -216,7 +217,7 @@ c3r1r2:
 	mov P0, #001111111b
 	JNB P0.3, apushed
 	JMP onepushed
-	
+
 c3r3r4:
 	mov P0, #011101111b
 	JNB P0.3, sevenpushed
