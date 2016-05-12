@@ -34,10 +34,20 @@ clk_ram equ 032h
 
 init:
 	setb EA
+
+	;timer 0
+	setb ET0
 	mov TMOD, #011h;select both 16 bit counters
 	MOV TH0, #03Ch;load the counter with 15535
 	MOV TL0, #0AFh;idem
 	setb TR0
+
+	;timer2
+	setb ET2
+	mov RCAP2H, #0f7H
+	mov RCAP2L, #01eh
+
+	;init state
 	mov twentyhz, #020
 	mov state, #counting
 	clr almstopped
@@ -235,5 +245,13 @@ endfiftymsinterrupt:
 	MOV TH0, #03Ch;load the counter with 15535
 	MOV TL0, #0AFh;idem
 	RETI
+
+ringinginterrupt:
+	clr TF2
+	clr exf2
+	jnb ringingonoff, retint
+	cpl p2.2
+retint:
+	reti
 
 END
