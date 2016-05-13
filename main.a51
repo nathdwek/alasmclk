@@ -12,7 +12,7 @@ ORG 002Bh
 
 ;counters
 ;register bank 0
-twentyhz equ r6
+twentyhz equ r4
 
 ;edge detection
 waspushed equ 00h
@@ -21,16 +21,21 @@ wasswitch equ 01h
 ;State machine
 ;register bank 0
 state equ r5
-counting equ 04
-seth equ 03
-setm equ 02
-sets equ 01
+counting equ 07
+seth10 equ 06
+seth1 equ 05
+setm10 equ 04
+setm1 equ 03
+sets10 equ 02
+sets1 equ 01
 ringingonoff equ 02h
 almstopped equ 03h
 
-alm_clk equ r7
-alm_ram equ 02Fh
-clk_ram equ 032h
+alm_clk equ r6
+clk_ram equ 030h
+alm_ram equ 036h
+lims_ram equ 03Ch
+lims_ram_end equ 040h
 
 init:
 	setb EA
@@ -44,17 +49,31 @@ init:
 
 	;timer2
 	setb ET2
-	mov RCAP2H, #0f7H
-	mov RCAP2L, #01eh
+	mov RCAP2H, #0fBH
+	mov RCAP2L, #08eh
 
 	;init state
 	mov twentyhz, #020
 	mov state, #counting
 	clr almstopped
 	clr ringingonoff
+	
+	;init lims
+	mov 03ch, #010
+	mov 03dh, #06
+	mov 03eh, #010
+	mov 03fh, #06
 
 	;TEST
-	mov 030h, #010
+	mov 036h, #010
+	mov 037h, #01
+	mov 038h, #00
+	mov 035h, #00
+	mov 034h, #00
+	mov 033h, #00
+	mov 032h, #00
+	mov 031h, #04
+	mov 030h, #08
 
 	LJMP main
 
@@ -66,24 +85,43 @@ fiftymsinterrupt:
 	djnz twentyhz, readbutton
 	mov twentyhz, #020
 	mov r0, #clk_ram
+	mov r1, #lims_ram
+incloop:
+	cpl p2.3
+	inc @r0
+	mov A, @r1
+	subb A, @r0
+	jz preincloop
+	ljmp deccntdwn
+	
+preincloop:
+	cpl p2.4
+	mov @r0, #00
+	inc r0
+	inc r1
+	cjne r1, #lims_ram_end, incloop
+	ljmp inchours
+
+inchours:
+	inc @r0
+	cjne @r0, #010, inchours2
+	mov @r0, #00
 	inc r0
 	inc @r0
-	cjne @r0, #060, deccntdwn; if the clock is not equal to 60 seconds we jump to the reqdbutton part
+	ljmp deccntdwn
+
+inchours2:
+	cjne @r0, #04, deccntdwn
+	inc @r0
+	cjne @r0, #02, deccntdwn
 	mov @r0, #00
-	inc r0
-	inc @r0;increment the clock of the minutes
-	cjne @r0, #060, deccntdwn; if the clock is not equal to 60 minutes we jump to the reqdbutton part
-	mov @r0, #00
-	inc r0
-	inc @r0;increment the clock of the hours
-	cjne @r0, #024, deccntdwn; if the clock is not equal to 24 hours we jump to the reqdbutton part
+	dec r0
 	mov @r0, #00
 
 deccntdwn:
 	jb TR2, ringing
 	jb almstopped, readbutton
 	mov r0, #alm_ram
-	inc r0
 	cjne @r0, #00, decsec
 	inc r0
 	cjne @r0, #00, decmin
@@ -93,11 +131,9 @@ deccntdwn:
 
 decsec:
 	dec @r0
-	cpl p2.3
 	ljmp readbutton
 
 decmin:
-	cpl p2.4
 	dec @r0
 	dec r0
 	mov @r0, #060
@@ -242,7 +278,7 @@ fourpushed:
 
 snoozepushed:
 	clr TR2
-	mov 030h, #010
+	mov 036h, #010
 	LJMP endfiftymsinterrupt
 
 stoppushed:
