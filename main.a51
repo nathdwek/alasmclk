@@ -5,14 +5,14 @@ ORG 000h
 	LJMP init
 
 ORG 000Bh
-	LJMP fiftymsinterrupt
+	LJMP twentyhzinterrupt
 
 ORG 002Bh
 	LJMP ringinginterrupt
 
 ;counters
 ;register bank 0
-twentyhz equ r4
+twentyhz equ #03ch
 
 ;edge detection
 waspushed equ 00h
@@ -38,14 +38,23 @@ lims_ram equ 03Ch
 lims_ram_end equ 040h
 
 init:
+	;glb interrupt enable
 	setb EA
+	
+	;Common to timers 0 and 1
+	mov TMOD, #000100001b;T0:16bits, T1:8bits w autoreload
 
 	;timer 0
 	setb ET0
-	mov TMOD, #011h;select both 16 bit counters
 	MOV TH0, #03Ch;load the counter with 15535
 	MOV TL0, #0AFh;idem
 	setb TR0
+
+	;timer 1
+	setb ET1
+	mov TL1, #0200d
+	mov TH1, #0200d
+	setb TR1
 
 	;timer2
 	setb ET2
@@ -81,12 +90,12 @@ main:
 	ljmp main
 
 
-fiftymsinterrupt:
-	djnz twentyhz, readbutton
+twentyhzinterrupt:
+	djnz twentyhz, readbutton;if a second has passed, handle clock, countdown and then keyboard. Else, only handle kb
 	mov twentyhz, #020
 	mov r0, #clk_ram
 	mov r1, #lims_ram
-incloop:
+incclkloop:
 	cpl p2.3
 	inc @r0
 	mov A, @r1
