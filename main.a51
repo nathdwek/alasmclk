@@ -13,20 +13,17 @@ ORG 001Bh
 ORG 002Bh
 	LJMP ringinginterrupt
 
-;edge detection
+;edge detection/debouncing
 waspushed equ 00h
 wasswitch equ 01h
+digitdown equ 05h
+thedigitdown equ 044h
+
 
 ;State machine
 ;register bank 0
 state equ r2
 counting equ 07
-seth10 equ 06
-seth1 equ 05
-setm10 equ 04
-setm1 equ 03
-sets10 equ 02
-sets1 equ 01
 ;single bit states
 ringingonoff equ 02h
 almstopped equ 03h
@@ -55,7 +52,7 @@ SIX:   DB 11111b,00001b,01101b,01101b,00001b,01111b,01111b,00001b
 SEVEN: DB 11111b,10111b,10111b,10111b,10111b,11011b,11101b,00001b
 EIGHT: DB 11111b,00001b,01101b,01101b,00001b,01101b,01101b,00001b
 NINE:  DB 11111b,00001b,11101b,11101b,00001b,01101b,01101b,00001b
-POINT: DB 11111b,11111b,11111b,11011b,11111b,11011b,11111b,11111b
+COLON: DB 11111b,11111b,11111b,11011b,11111b,11011b,11111b,11111b
 
 init:
 	;glb interrupt enable
@@ -85,14 +82,16 @@ init:
 	;init state
 	mov twentyhz, #020
 	mov state, #counting
-	clr almstopped
+	setb almstopped
 	clr ringingonoff
 	
 	;init overflow values for minutes and seconds
-	mov 03ch, #010
-	mov 03dh, #06
-	mov 03eh, #010
-	mov 03fh, #06
+	mov 03ch, #010d
+	mov 03dh, #06d
+	mov 03eh, #010d
+	mov 03fh, #06d
+	mov 040h, #010d
+	mov 041h, #010d
 	
 	;init screen stuff
 	setb rs0
@@ -122,7 +121,7 @@ init:
 	mov 039h, #00d
 	mov 038h, #00d
 	mov 037h, #00d
-	mov 036h, #03d
+	mov 036h, #00d
 	
 	;
 	mov SP, #070h
@@ -202,7 +201,6 @@ zeroloop:
 	ljmp readbutton
 
 ringing:
-	cpl p2.4
 	cpl ringingonoff
 
 readbutton:
@@ -217,26 +215,29 @@ notpushed:
 
 nextstate:
 	clr waspushed;
-	djnz state, readswitch
+	clr p2.4
 	mov state, #counting
+	dec state
+	jb P2.5, readswitch
+	setb almstopped
 	ljmp readswitch
 
 readswitch:
-	jb P2.5, swhours
+	jb P2.5, swclk
 	mov alm_clk, #alm_ram
 	jb wasswitch, swdiff
 	ljmp switchtoreadkb
 
-swhours:
+swclk:
 	mov alm_clk, #clk_ram
 	jnb wasswitch, swdiff
 	ljmp switchtoreadkb
 
 swdiff:
 	mov state, #counting
+	setb p2.4
 	mov C, P2.5
 	mov wasswitch, C
-	cpl p2.4
 
 switchtoreadkb:
 	jb TR2, readkb
@@ -245,11 +246,23 @@ switchtoreadkb:
 
 readkb:
 	mov P0, #00Fh
+	jb digitdown, waitrelease
 	JNB  P0.0,c0
 	JNB  P0.1,c1
 	JNB  P0.2,c2
 	JNB  P0.3,c3
 	LJMP endfiftymsinterrupt
+	
+waitrelease:
+	JNB  P0.0,stilldown
+	JNB  P0.1,stilldown
+	JNB  P0.2,stilldown
+	JNB  P0.3,stilldown
+	clr digitdown
+	LJMP digitreleased
+
+stilldown:
+	ljmp endfiftymsinterrupt
 
 c0:
 	mov P0, #000111111b
@@ -260,11 +273,19 @@ c0r1r2:
 	mov P0, #001111111b
 	JNB P0.0, fpushed
 	JMP epushed
+	
+fpushed:
+	LJMP endfiftymsinterrupt
 
 c0r3r4:
 	mov P0, #011101111b
 	JNB P0.0, stoppushed
 	JMP snoozepushed
+	
+stoppushed:
+	clr TR2
+	setb almstopped
+	LJMP endfiftymsinterrupt
 
 c1:
 	mov P0, #000111111b
@@ -273,13 +294,20 @@ c1:
 
 c1r1r2:
 	mov P0, #001111111b
-	JNB P0.1, bpushed
-	JMP threepushed
+	JNB P0.1, ninepushed
+	JMP sixpushed
+
+ninepushed:
+	mov thedigitdown, #09d
+	ljmp digitpressed
 
 c1r3r4:
 	mov P0, #011101111b
-	JNB P0.1, ninepushed
-	JMP sixpushed
+	JNB P0.1, bpushed
+	JMP threepushed
+	
+bpushed:
+	LJMP endfiftymsinterrupt
 
 c2:
 	mov P0, #000111111b
@@ -288,13 +316,13 @@ c2:
 
 c2r1r2:
 	mov P0, #001111111b
-	JNB P0.2, zeropushed
-	JMP twopushed
+	JNB P0.2, eightpushed
+	JMP fivepushed
 
 c2r3r4:
 	mov P0, #011101111b
-	JNB P0.2, eightpushed
-	JMP fivepushed
+	JNB P0.2, zeropushed
+	JMP twopushed
 c3:
 	mov P0, #000111111b
 	JNB	P0.3, c3r1r2
@@ -302,41 +330,97 @@ c3:
 
 c3r1r2:
 	mov P0, #001111111b
-	JNB P0.3, apushed
-	JMP onepushed
-
-c3r3r4:
-	mov P0, #011101111b
 	JNB P0.3, sevenpushed
 	JMP fourpushed
 
+c3r3r4:
+	mov P0, #011101111b
+	JNB P0.3, apushed
+	JMP onepushed
+
 zeropushed:
-twopushed:
-threepushed:
-fivepushed:
-sixpushed:
-sevenpushed:
-eightpushed:
-ninepushed:
-apushed:
-bpushed:
-epushed:
-fpushed:
+	mov thedigitdown, #00d
+	ljmp digitpressed
 onepushed:
+	mov thedigitdown, #01d
+	ljmp digitpressed
+twopushed:
+	mov thedigitdown, #02d
+	ljmp digitpressed
+threepushed:
+	mov thedigitdown, #03d
+	ljmp digitpressed
 fourpushed:
-	cpl p2.3
+	mov thedigitdown, #04d
+	ljmp digitpressed
+fivepushed:
+	mov thedigitdown, #05d
+	ljmp digitpressed
+sixpushed:
+	mov thedigitdown, #06d
+	ljmp digitpressed
+sevenpushed:
+	mov thedigitdown, #07d
+	ljmp digitpressed
+eightpushed:
+	mov thedigitdown, #08d
+	ljmp digitpressed
+
+apushed:
+epushed:
 	LJMP endfiftymsinterrupt
 
 snoozepushed:
 	jnb TR2, endfiftymsinterrupt
 	clr TR2
-	mov 036h, #010
+	mov 038h, #03d
 	LJMP endfiftymsinterrupt
+	
+digitpressed:
+	setb digitdown
+	ljmp endfiftymsinterrupt
+	
+digitreleased:
+	
+	mov A, #lims_ram
+	add A, state
+	dec A
+	mov r0, A
+	mov A, @r0
+	mov r0, thedigitdown
+	inc r0
+	subb A, r0
+	jc endfiftymsinterrupt
+	jnb p2.5, usedigit
+	cjne state, #06d, chkhourfurther
+	mov A, #02d
+	subb A, thedigitdown
+	jc endfiftymsinterrupt
+	ljmp usedigit
+chkhourfurther:
+	cjne state, #05d, usedigit
+	mov r7, 035h
+	cjne r7, #02d, usedigit
+	mov A, #03d
+	subb A, thedigitdown
+	jc endfiftymsinterrupt
 
-stoppushed:
-	clr TR2
-	setb almstopped
-	LJMP endfiftymsinterrupt
+usedigit:
+	mov A, alm_clk
+	add A, state
+	dec A
+	mov R0, A
+	mov A, thedigitdown
+	mov @R0, A
+	djnz state, endfiftymsinterrupt
+	mov state, #counting
+	jb p2.5, shutled
+	clr almstopped
+
+shutled:
+	setb p2.4
+	ljmp endfiftymsinterrupt
+	
 
 endfiftymsinterrupt:
 	MOV TH0, #03Ch;load the counter with 15535
@@ -348,7 +432,6 @@ ringinginterrupt:
 	clr TF2
 	clr exf2
 	jb ringingonoff, endtwentyhzint
-	cpl p2.3
 	cpl p2.2
 
 endtwentyhzint:
