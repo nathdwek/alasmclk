@@ -7,11 +7,11 @@ ORG 000h
 ORG 000Bh
 	LJMP twentyhzinterrupt
 
-ORG 002Bh
-	LJMP ringinginterrupt
-
 ORG 001Bh
 	LJMP screeninterrupt
+
+ORG 002Bh
+	LJMP ringinginterrupt
 
 ;edge detection
 waspushed equ 00h
@@ -80,6 +80,7 @@ init:
 	setb ET2
 	mov RCAP2H, #0fBH
 	mov RCAP2L, #08eh
+	setb IPL0.5
 
 	;init state
 	mov twentyhz, #020
@@ -122,6 +123,9 @@ init:
 	mov 038h, #00d
 	mov 037h, #00d
 	mov 036h, #03d
+	
+	;
+	mov SP, #070h
 
 	LJMP main
 
@@ -324,6 +328,7 @@ fourpushed:
 	LJMP endfiftymsinterrupt
 
 snoozepushed:
+	jnb TR2, endfiftymsinterrupt
 	clr TR2
 	mov 036h, #010
 	LJMP endfiftymsinterrupt
@@ -339,12 +344,15 @@ endfiftymsinterrupt:
 	RETI
 
 ringinginterrupt:
+	push psw
 	clr TF2
 	clr exf2
 	jb ringingonoff, endtwentyhzint
 	cpl p2.3
 	cpl p2.2
+
 endtwentyhzint:
+	pop psw
 	reti
 
 screeninterrupt:
