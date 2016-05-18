@@ -10,9 +10,8 @@ ORG 000Bh
 ORG 002Bh
 	LJMP ringinginterrupt
 
-;counters
-;register bank 0
-twentyhz equ 040h
+ORG 001Bh
+	LJMP screeninterrupt
 
 ;edge detection
 waspushed equ 00h
@@ -20,7 +19,7 @@ wasswitch equ 01h
 
 ;State machine
 ;register bank 0
-state equ r5
+state equ r2
 counting equ 07
 seth10 equ 06
 seth1 equ 05
@@ -28,14 +27,34 @@ setm10 equ 04
 setm1 equ 03
 sets10 equ 02
 sets1 equ 01
+;single bit states
 ringingonoff equ 02h
 almstopped equ 03h
 
-alm_clk equ r6
+;counters for clk and cnt, as well as overflow values for minutes and seconds
+alm_clk equ 041h
 clk_ram equ 030h
 alm_ram equ 036h
 lims_ram equ 03Ch
 lims_ram_end equ 040h
+twentyhz equ 040h
+	
+;screen
+datab bit P4.1
+shiftb bit P4.0
+storeb bit P3.2
+	
+ZERO:  DB 11111b,00001b,01101b,01101b,01101b,01101b,01101b,00001b
+ONE:   DB 11111b,11011b,11011b,11011b,11011b,11011b,11011b,11011b
+TWO:   DB 11111b,00001b,01111b,01111b,00001b,11101b,11101b,00001b
+THREE: DB 11111b,00001b,11101b,11101b,00001b,11101b,11101b,00001b
+FOUR:  DB 11111b,11101b,11101b,11101b,00001b,01101b,01101b,01101b
+FIVE:  DB 11111b,00001b,11101b,11101b,00001b,01111b,01111b,00001b
+SIX:   DB 11111b,00001b,01101b,01101b,00001b,01111b,01111b,00001b
+SEVEN: DB 11111b,10111b,10111b,10111b,10111b,11011b,11101b,00001b
+EIGHT: DB 11111b,00001b,01101b,01101b,00001b,01101b,01101b,00001b
+NINE:  DB 11111b,00001b,11101b,11101b,00001b,01101b,01101b,00001b
+POINT: DB 11111b,11111b,11111b,11011b,11111b,11011b,11111b,11111b
 
 init:
 	;glb interrupt enable
@@ -67,11 +86,24 @@ init:
 	clr almstopped
 	clr ringingonoff
 	
-	;init lims
+	;init overflow values for minutes and seconds
 	mov 03ch, #010
 	mov 03dh, #06
 	mov 03eh, #010
 	mov 03fh, #06
+	
+	;init screen stuff
+	setb rs0
+	mov r2, #02
+	MOV R3, #08d ; 7 counter for Pointer
+	MOV R4, #08d ; 8 rows
+	MOV R5, #05d
+	MOV R7, #11111110b;
+	MOV R6, #08d
+	CLR shiftb
+	CLR datab
+	CLR storeb
+	clr rs0
 
 	;TEST
 	mov 036h, #010
@@ -81,8 +113,8 @@ init:
 	mov 034h, #00
 	mov 033h, #00
 	mov 032h, #00
-	mov 031h, #04
-	mov 030h, #08
+	mov 031h, #00
+	mov 030h, #00
 
 	LJMP main
 
@@ -97,15 +129,13 @@ twentyhzinterrupt:
 	mov r1, #lims_ram
 	
 incclkloop:
-	cpl p2.3
 	inc @r0
 	mov A, @r1
 	subb A, @r0
-	jz clkoverflow
+	jc clkoverflow
 	ljmp deccntdwn
 	
 clkoverflow:
-	cpl p2.4
 	mov @r0, #00
 	inc r0
 	inc r1
@@ -303,9 +333,61 @@ endfiftymsinterrupt:
 ringinginterrupt:
 	clr TF2
 	clr exf2
-	jnb ringingonoff, retint
+	jnb ringingonoff, endtwentyhzint
 	cpl p2.2
-retint:
+endtwentyhzint:
+	reti
+
+screeninterrupt:
+	setb rs0
+	mov r0, alm_clk
+	mov r2, #03d
+	MOV DPTR,#ZERO ; pointer goes to the first element of ONE
+outerloop:
+	djnz r2, digit
+	mov r2, #03d
+	mov A, #010
+	dec r0
+	ljmp valtorepr
+digit:
+	mov A, @r0
+valtorepr:
+	mov B, #08d
+	mul AB
+	ADD A,R3;
+	MOVC A,@A+DPTR
+innerloop:
+	RRC A ; rotate right and put in the carry
+	MOV datab,C ; then put the value of carry in tghe data bit 
+	SETB shiftb; we shift
+	CLR shiftb; we clear
+	DJNZ R5,innerloop; redo 5 times
+	MOV R5, #05h
+	inc r0
+	djnz r6, outerloop
+	mov r6, #08d
+	mov r0, alm_clk
+	
+	MOV A,R7;
+	
+lines:				
+	RRC A;
+	MOV datab,C
+	SETB shiftb
+	CLR shiftb
+	DJNZ R4,lines
+	MOV R4, #08h;
+	SETB storeb
+	CLR storeb ; store bit
+	MOV A,R7 
+	RR A;
+	MOV R7,A
+	DJNZ R3,endscreenint
+	MOV R3, #08h
+	
+endscreenint:
+	MOV A,R3
+	clr rs0
 	reti
 
 END
