@@ -32,12 +32,13 @@ ringingonoff equ 02h
 almstopped equ 03h
 
 ;counters for clk and cnt, as well as overflow values for minutes and seconds
-alm_clk equ 041h
+alm_clk equ 043h
 clk_ram equ 030h
 alm_ram equ 036h
 lims_ram equ 03Ch
-lims_ram_end equ 040h
-twentyhz equ 040h
+lims_ram_h equ 040h
+lims_ram_end equ 042h
+twentyhz equ 042h
 	
 ;screen
 datab bit P4.1
@@ -71,8 +72,8 @@ init:
 
 	;timer 1
 	setb ET1
-	mov TL1, #0200d
-	mov TH1, #0200d
+	mov TL1, #00d
+	mov TH1, #00d
 	setb TR1
 
 	;timer2
@@ -105,16 +106,22 @@ init:
 	CLR storeb
 	clr rs0
 
-	;TEST
-	mov 036h, #010
-	mov 037h, #01
-	mov 038h, #00
-	mov 035h, #00
-	mov 034h, #00
-	mov 033h, #00
-	mov 032h, #00
-	mov 031h, #00
-	mov 030h, #00
+	;TEST CLK
+	mov 038h, #00d
+	mov 035h, #00d
+	mov 034h, #00d
+	mov 033h, #00d
+	mov 032h, #00d
+	mov 031h, #00d
+	mov 030h, #00d
+	
+	;TEST ALM
+	mov 03bh, #00d
+	mov 03ah, #00d
+	mov 039h, #00d
+	mov 038h, #00d
+	mov 037h, #00d
+	mov 036h, #03d
 
 	LJMP main
 
@@ -139,7 +146,7 @@ clkoverflow:
 	mov @r0, #00
 	inc r0
 	inc r1
-	cjne r1, #lims_ram_end, incclkloop
+	cjne r1, #lims_ram_h, incclkloop
 
 incclkhours1:
 	inc @r0
@@ -161,36 +168,37 @@ deccntdwn:
 	jb TR2, ringing
 	jb almstopped, readbutton
 	mov r0, #alm_ram
-	cjne @r0, #00, decsec
+	mov r1, #lims_ram
+	
+deccntloop:
+	cjne r1, #lims_ram_end, notboum
+	jmp boum
+
+notboum:
+	cjne @r0, #00, nounderflow
+	mov A, @r1
+	mov @r0, A
+	dec @r0
 	inc r0
-	cjne @r0, #00, decmin
-	inc r0
-	cjne @r0, #00, dechour
-	ljmp boum
+	inc r1
+	jmp deccntloop
 
-decsec:
+nounderflow:
 	dec @r0
-	ljmp readbutton
-
-decmin:
-	dec @r0
-	dec r0
-	mov @r0, #060
-	ljmp readbutton
-
-dechour:
-	dec @r0
-	dec r0
-	mov @r0, #060
-	dec r0
-	mov @r1, #060
 	ljmp readbutton
 
 boum:
+	mov r7, #06d
+	mov r0, #alm_ram
+zeroloop:
+	mov @r0, #00d
+	inc r0
+	djnz r7, zeroloop
 	setb TR2
 	ljmp readbutton
 
 ringing:
+	cpl p2.4
 	cpl ringingonoff
 
 readbutton:
@@ -333,7 +341,8 @@ endfiftymsinterrupt:
 ringinginterrupt:
 	clr TF2
 	clr exf2
-	jnb ringingonoff, endtwentyhzint
+	jb ringingonoff, endtwentyhzint
+	cpl p2.3
 	cpl p2.2
 endtwentyhzint:
 	reti
