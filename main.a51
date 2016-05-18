@@ -220,6 +220,7 @@ nextstate:
 	dec state
 	jb P2.5, readswitch
 	setb almstopped
+	clr TR2
 	ljmp readswitch
 
 readswitch:
@@ -442,7 +443,7 @@ screeninterrupt:
 	setb rs0
 	mov r0, alm_clk
 	mov r2, #03d
-	MOV DPTR,#ZERO ; pointer goes to the first element of ONE
+	MOV DPTR,#ZERO ; pointer goes to the first element of ZERO
 outerloop:
 	djnz r2, digit
 	mov r2, #03d
