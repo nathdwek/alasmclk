@@ -12,7 +12,7 @@ ORG 002Bh
 
 ;counters
 ;register bank 0
-twentyhz equ #03ch
+twentyhz equ 040h
 
 ;edge detection
 waspushed equ 00h
@@ -95,33 +95,33 @@ twentyhzinterrupt:
 	mov twentyhz, #020
 	mov r0, #clk_ram
 	mov r1, #lims_ram
+	
 incclkloop:
 	cpl p2.3
 	inc @r0
 	mov A, @r1
 	subb A, @r0
-	jz preincloop
+	jz clkoverflow
 	ljmp deccntdwn
 	
-preincloop:
+clkoverflow:
 	cpl p2.4
 	mov @r0, #00
 	inc r0
 	inc r1
-	cjne r1, #lims_ram_end, incloop
-	ljmp inchours
+	cjne r1, #lims_ram_end, incclkloop
 
-inchours:
+incclkhours1:
 	inc @r0
-	cjne @r0, #010, inchours2
+	cjne @r0, #010, incclkhours2
 	mov @r0, #00
 	inc r0
 	inc @r0
 	ljmp deccntdwn
 
-inchours2:
+incclkhours2:
 	cjne @r0, #04, deccntdwn
-	inc @r0
+	inc r0
 	cjne @r0, #02, deccntdwn
 	mov @r0, #00
 	dec r0
