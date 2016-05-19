@@ -40,9 +40,14 @@ lims_ram_end EQU 042h;We have to know those values to make some checks easier
 twentyhz EQU 042h;This counter is used to go from the 20Hz timer 1 to a single second clock
 
 ;screen
+;register bank 1
 datab BIT P4.1
 shiftb BIT P4.0
 storeb BIT P3.2
+matrixrow EQU r3
+matrixcolumn EQU r5
+matrix EQU r6
+rowmask EQU r7
 
 ZERO:  DB 11111b,00001b,01101b,01101b,01101b,01101b,01101b,00001b
 ONE:   DB 11111b,11011b,11011b,11011b,11011b,11011b,11011b,11011b
@@ -466,39 +471,36 @@ digit:
 valtorepr:
 	mov B, #08d
 	mul AB
-	ADD A,r3;
-	movc A,@A+DPTR
+	ADD A,matrixrow;
+	movc A,@A+DPTR;The right byte is at 8*digit+row, digit to represent is in @r0
 innerloop:
 	rrc A ; rotate right and put in the carry
-	mov datab,C ; then put the value of carry in tghe data bit
-	setb shiftb; we shift
-	clr shiftb; we clear
-	djnz r5,innerloop; redo 5 times
-	mov r5, #05h
+	mov datab,C ;then give to shift register
+	setb shiftb; trigger shift
+	clr shiftb
+	djnz matrixcolumn,innerloop; redo 5 times
+	mov matrixcolumn, #05h
 	inc r0
-	djnz r6, outerloop
-	mov r6, #08d
-	mov r0, alm_clk
+	djnz matrix, outerloop
+	mov matrix, #08d
+	mov A,rowmask
 
-	mov A,r7;
-
-lines:
+activatesingleline:
 	rrc A;
 	mov datab,C
 	setb shiftb
 	clr shiftb
-	djnz r4,lines
+	djnz r4, activatesingleline
 	mov r4, #08h;
 	setb storeb
 	clr storeb ; store bit
-	mov A,r7
-	RR A;
-	mov r7,A
-	djnz r3,endscreenint
-	mov r3, #08h
+	mov A,rowmask
+	rr A;
+	mov rowmask,A
+	djnz matrixrow,endscreenint
+	mov matrixrow, #08h
 
 endscreenint:
-	mov A,r3
 	clr rs0
 	reti
 
