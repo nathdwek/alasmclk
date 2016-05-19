@@ -2,46 +2,48 @@
 $include(t89c51cc01.inc)
 
 ORG 000h
-	LJMP init
+	ljmp init
 
 ORG 000Bh
-	LJMP twentyhzinterrupt
+	ljmp twentyhzinterrupt
 
 ORG 001Bh
-	LJMP screeninterrupt
+	ljmp screeninterrupt
 
 ORG 002Bh
-	LJMP ringinginterrupt
+	ljmp ringinginterrupt
 
 ;edge detection/debouncing
-waspushed equ 00h
-wasswitch equ 01h
-digitdown equ 05h
-thedigitdown equ 044h
-
+waspushed EQU 00h;Previous state of the button
+wasswitch EQU 01h;Previous state of the switch
+digitdown EQU 05h;If a numeric button has been pressed and not released yet
+thedigitdown EQU 044h;Which one
 
 ;State machine
 ;register bank 0
-state equ r2
-counting equ 07
+state EQU r2;Which digit the user is changing
+counting EQU 07;Reset value (i.e. everything running and user can't touch anything)
+;is 7 because there are 6 digits and we don't use zero because djnz
+
 ;single bit states
-ringingonoff equ 02h
-almstopped equ 03h
+ringingonoff EQU 02h;use to obtain the "beep...beep" effect
+almstopped EQU 03h;Is the alarm running
 
 ;counters for clk and cnt, as well as overflow values for minutes and seconds
-alm_clk equ 043h
-clk_ram equ 030h
-alm_ram equ 036h
-lims_ram equ 03Ch
-lims_ram_h equ 040h
-lims_ram_end equ 042h
-twentyhz equ 042h
-	
+alm_clk EQU 043h;This contains the address to either clk_ram or alm_ram depending on the display mode
+clk_ram EQU 030h;Start of the memory of the clock (seconds, tens of seconds, and so forth)
+alm_ram EQU 036h;Start of the memory of the alarm/countdown (idem)
+lims_ram EQU 03Ch;Start of the memory of the overflow values (10, 6, 10, 6, 10, 10)
+;(see further for the hours overflow)
+lims_ram_h EQU 040h
+lims_ram_end EQU 042h;We have to know those values to make some checks easier
+twentyhz EQU 042h;This counter is used to go from the 20Hz timer 1 to a single second clock
+
 ;screen
-datab bit P4.1
-shiftb bit P4.0
-storeb bit P3.2
-	
+datab BIT P4.1
+shiftb BIT P4.0
+storeb BIT P3.2
+
 ZERO:  DB 11111b,00001b,01101b,01101b,01101b,01101b,01101b,00001b
 ONE:   DB 11111b,11011b,11011b,11011b,11011b,11011b,11011b,11011b
 TWO:   DB 11111b,00001b,01111b,01111b,00001b,11101b,11101b,00001b
@@ -57,34 +59,33 @@ COLON: DB 11111b,11111b,11111b,11011b,11111b,11011b,11111b,11111b
 init:
 	;glb interrupt enable
 	setb EA
-	
+
 	;Common to timers 0 and 1
 	mov TMOD, #000100001b;T0:16bits, T1:8bits w autoreload
 
 	;timer 0
 	setb ET0
-	MOV TH0, #03Ch;load the counter with 15535
-	MOV TL0, #0AFh;idem
-	setb TR0
+	mov TH0, #03Ch;load the counter with 15535 to get 20Hz
+	mov TL0, #0AFh
+	setb TR0;
 
 	;timer 1
 	setb ET1
 	mov TL1, #00d
-	mov TH1, #00d
+	mov TH1, #00d;Slowest 8bit timer
 	setb TR1
 
 	;timer2
 	setb ET2
 	mov RCAP2H, #0fBH
-	mov RCAP2L, #08eh
-	setb IPL0.5
+	mov RCAP2L, #08eh; 880Hz to get 440Hz with CPL
+	setb IPL0.5;timer1 is very rapid and has higher priority than timer2. Change this in order to service the very short timer 2 interruption consistently
 
 	;init state
 	mov twentyhz, #020
 	mov state, #counting
 	setb almstopped
-	clr ringingonoff
-	
+
 	;init overflow values for minutes and seconds
 	mov 03ch, #010d
 	mov 03dh, #06d
@@ -92,21 +93,21 @@ init:
 	mov 03fh, #06d
 	mov 040h, #010d
 	mov 041h, #010d
-	
+
 	;init screen stuff
 	setb rs0
 	mov r2, #02
-	MOV R3, #08d ; 7 counter for Pointer
-	MOV R4, #08d ; 8 rows
-	MOV R5, #05d
-	MOV R7, #11111110b;
-	MOV R6, #08d
-	CLR shiftb
-	CLR datab
-	CLR storeb
+	mov r3, #08d ; 7 counter for Pointer
+	mov r4, #08d ; 8 rows
+	mov r5, #05d
+	mov r7, #11111110b;
+	mov r6, #08d
+	clr shiftb
+	clr datab
+	clr storeb
 	clr rs0
 
-	;TEST CLK
+	;ZERO CLK
 	mov 038h, #00d
 	mov 035h, #00d
 	mov 034h, #00d
@@ -114,44 +115,43 @@ init:
 	mov 032h, #00d
 	mov 031h, #00d
 	mov 030h, #00d
-	
-	;TEST ALM
+
+	;ZERO ALM
 	mov 03bh, #00d
 	mov 03ah, #00d
 	mov 039h, #00d
 	mov 038h, #00d
 	mov 037h, #00d
 	mov 036h, #00d
-	
-	;
+
+	;Move the stack pointer to a safer place since we use RB1, bit adressable ram and ram
 	mov SP, #070h
 
-	LJMP main
+	ljmp main
 
 main:
 	ljmp main
 
-
-twentyhzinterrupt:
+twentyhzinterrupt:;Timer 1
 	djnz twentyhz, readbutton;if a second has passed, handle clock, countdown and then keyboard. Else, only handle kb
 	mov twentyhz, #020
 	mov r0, #clk_ram
 	mov r1, #lims_ram
-	
+
 incclkloop:
-	inc @r0
+	inc @r0;increment current digit
 	mov A, @r1
-	subb A, @r0
-	jc clkoverflow
+	subb A, @r0;compare to current overflow value
+	jc clkoverflow;branch accordingly
 	ljmp deccntdwn
-	
-clkoverflow:
+
+clkoverflow:;There was an overflow, zero current digit, go to next digit and limit, loop
 	mov @r0, #00
 	inc r0
 	inc r1
-	cjne r1, #lims_ram_h, incclkloop
+	cjne r1, #lims_ram_h, incclkloop;If we reached the hours digit, the handling is more complex
 
-incclkhours1:
+incclkhours1:;This basically check for the overflow at 24, which spans to digits
 	inc @r0
 	cjne @r0, #010, incclkhours2
 	mov @r0, #00
@@ -168,21 +168,23 @@ incclkhours2:
 	mov @r0, #00
 
 deccntdwn:
-	jb TR2, ringing
+	jb TR2, ringing;TR2 (buzzer) indicates if the alarm is ringing
 	jb almstopped, readbutton
 	mov r0, #alm_ram
 	mov r1, #lims_ram
-	
+
+;read notboum first, it's easier that way
 deccntloop:
-	cjne r1, #lims_ram_end, notboum
+	cjne r1, #lims_ram_end, notboum;if there was an underflow and we looped 6 times, than we reached zero!
 	jmp boum
 
 notboum:
 	cjne @r0, #00, nounderflow
-	mov A, @r1
+	mov A, @r1;Underflow: load the corresponding overflow value in the digit, and decrement it
+	;(for example if overflow at 10 then the underflow value is 9)
 	mov @r0, A
 	dec @r0
-	inc r0
+	inc r0;And go decrement the next digit from which we borrowed
 	inc r1
 	jmp deccntloop
 
@@ -190,7 +192,8 @@ nounderflow:
 	dec @r0
 	ljmp readbutton
 
-boum:
+boum:;Basically start the buzzer timer, but also zero the cntdwn properly because
+	;For some reason it sometimes decrements one too many times
 	mov r7, #06d
 	mov r0, #alm_ram
 zeroloop:
@@ -201,15 +204,19 @@ zeroloop:
 	ljmp readbutton
 
 ringing:
-	cpl ringingonoff
+	cpl ringingonoff;If ringing rather then decrement the timer every second
+	;We should only toggle this bit on and off every second which is used to produce
+	;The "Beep Beep effect"
 
+;Debouncing routines for the button and the switch
+;Compare current state to previous state, and do something on a change
 readbutton:
 	jb P2.6, notpushed;
 	setb waspushed;
 	ljmp readswitch
 
 notpushed:
-	jb waspushed, nextstate
+	jb waspushed, nextstate;Only do something on the release
 	clr waspushed
 	ljmp readswitch
 
@@ -217,8 +224,8 @@ nextstate:
 	clr waspushed;
 	clr p2.4
 	mov state, #counting
-	dec state
-	jb P2.5, readswitch
+	dec state;Allow user to start setting the alarm or clock value
+	jb P2.5, readswitch;If in alarm mode, stop the alarm and the buzzer
 	setb almstopped
 	clr TR2
 	ljmp readswitch
@@ -226,7 +233,7 @@ nextstate:
 readswitch:
 	jb P2.5, swclk
 	mov alm_clk, #alm_ram
-	jb wasswitch, swdiff
+	jb wasswitch, swdiff;This time we do something at every change
 	ljmp switchtoreadkb
 
 swclk:
@@ -235,68 +242,69 @@ swclk:
 	ljmp switchtoreadkb
 
 swdiff:
-	mov state, #counting
+	mov state, #counting;The user can't set up the alarm/clock by default
 	setb p2.4
 	mov C, P2.5
 	mov wasswitch, C
 
 switchtoreadkb:
-	jb TR2, readkb
-	cjne state, #counting, readkb
-	LJMP endfiftymsinterrupt
+	jb TR2, readkb;If buzzer ringing, allow read kb because user can snooze or stop
+	cjne state, #counting, readkb;If state allows user to set up alarm or clock, read kb
+	ljmp endfiftymsinterrupt;Else, not
 
 readkb:
-	mov P0, #00Fh
-	jb digitdown, waitrelease
-	JNB  P0.0,c0
-	JNB  P0.1,c1
-	JNB  P0.2,c2
-	JNB  P0.3,c3
-	LJMP endfiftymsinterrupt
-	
+	mov P0, #00Fh;First check if any key is pressed
+	;We use the check+two steps method
+	jb digitdown, waitrelease;If we're waiting for a release, then do just that
+	jnb  P0.0,c0
+	jnb  P0.1,c1
+	jnb  P0.2,c2
+	jnb  P0.3,c3
+	ljmp endfiftymsinterrupt
+
 waitrelease:
-	JNB  P0.0,stilldown
-	JNB  P0.1,stilldown
-	JNB  P0.2,stilldown
-	JNB  P0.3,stilldown
+	jnb  P0.0,stilldown
+	jnb  P0.1,stilldown
+	jnb  P0.2,stilldown
+	jnb  P0.3,stilldown
 	clr digitdown
-	LJMP digitreleased
+	ljmp digitreleased
 
 stilldown:
 	ljmp endfiftymsinterrupt
 
 c0:
 	mov P0, #000111111b
-	JNB	P0.0, c0r1r2
-	JMP c0r3r4
+	jnb	P0.0, c0r1r2
+	jmp c0r3r4
 
 c0r1r2:
 	mov P0, #001111111b
-	JNB P0.0, fpushed
-	JMP epushed
-	
+	jnb P0.0, fpushed
+	jmp epushed
+
 fpushed:
-	LJMP endfiftymsinterrupt
+	ljmp endfiftymsinterrupt
 
 c0r3r4:
 	mov P0, #011101111b
-	JNB P0.0, stoppushed
-	JMP snoozepushed
-	
+	jnb P0.0, stoppushed
+	jmp snoozepushed
+
 stoppushed:
 	clr TR2
 	setb almstopped
-	LJMP endfiftymsinterrupt
+	ljmp endfiftymsinterrupt
 
 c1:
 	mov P0, #000111111b
-	JNB	P0.1, c1r1r2
-	JMP c1r3r4
+	jnb	P0.1, c1r1r2
+	jmp c1r3r4
 
 c1r1r2:
 	mov P0, #001111111b
-	JNB P0.1, ninepushed
-	JMP sixpushed
+	jnb P0.1, ninepushed
+	jmp sixpushed
 
 ninepushed:
 	mov thedigitdown, #09d
@@ -304,41 +312,42 @@ ninepushed:
 
 c1r3r4:
 	mov P0, #011101111b
-	JNB P0.1, bpushed
-	JMP threepushed
-	
+	jnb P0.1, bpushed
+	jmp threepushed
+
 bpushed:
-	LJMP endfiftymsinterrupt
+	ljmp endfiftymsinterrupt
 
 c2:
 	mov P0, #000111111b
-	JNB	P0.2, c2r1r2
-	JMP c2r3r4
+	jnb	P0.2, c2r1r2
+	jmp c2r3r4
 
 c2r1r2:
 	mov P0, #001111111b
-	JNB P0.2, eightpushed
-	JMP fivepushed
+	jnb P0.2, eightpushed
+	jmp fivepushed
 
 c2r3r4:
 	mov P0, #011101111b
-	JNB P0.2, zeropushed
-	JMP twopushed
+	jnb P0.2, zeropushed
+	jmp twopushed
 c3:
 	mov P0, #000111111b
-	JNB	P0.3, c3r1r2
-	JMP c3r3r4
+	jnb	P0.3, c3r1r2
+	jmp c3r3r4
 
 c3r1r2:
 	mov P0, #001111111b
-	JNB P0.3, sevenpushed
-	JMP fourpushed
+	jnb P0.3, sevenpushed
+	jmp fourpushed
 
 c3r3r4:
 	mov P0, #011101111b
-	JNB P0.3, apushed
-	JMP onepushed
+	jnb P0.3, apushed
+	jmp onepushed
 
+;Memorize which digit was pushed, and that a digit is being pushed
 zeropushed:
 	mov thedigitdown, #00d
 	ljmp digitpressed
@@ -367,22 +376,23 @@ eightpushed:
 	mov thedigitdown, #08d
 	ljmp digitpressed
 
+;Those don't do anything
 apushed:
 epushed:
-	LJMP endfiftymsinterrupt
+	ljmp endfiftymsinterrupt
 
 snoozepushed:
-	jnb TR2, endfiftymsinterrupt
-	clr TR2
-	mov 038h, #03d
-	LJMP endfiftymsinterrupt
-	
+	jnb Tr2, endfiftymsinterrupt
+	clr Tr2
+	mov 038h, #03d;3minutes
+	ljmp endfiftymsinterrupt
+
 digitpressed:
 	setb digitdown
 	ljmp endfiftymsinterrupt
-	
+
 digitreleased:
-	
+	;Check if value is within boundaries and if so load it in the adequate digit
 	mov A, #lims_ram
 	add A, state
 	dec A
@@ -398,6 +408,7 @@ digitreleased:
 	subb A, thedigitdown
 	jc endfiftymsinterrupt
 	ljmp usedigit
+
 chkhourfurther:
 	cjne state, #05d, usedigit
 	mov r7, 035h
@@ -410,29 +421,28 @@ usedigit:
 	mov A, alm_clk
 	add A, state
 	dec A
-	mov R0, A
+	mov r0, A
 	mov A, thedigitdown
-	mov @R0, A
+	mov @r0, A
 	djnz state, endfiftymsinterrupt
 	mov state, #counting
 	jb p2.5, shutled
-	clr almstopped
+	clr almstopped;When the user has set all alarm digits, immediately start the alarm
 
 shutled:
 	setb p2.4
 	ljmp endfiftymsinterrupt
-	
 
 endfiftymsinterrupt:
-	MOV TH0, #03Ch;load the counter with 15535
-	MOV TL0, #0AFh;idem
-	RETI
+	mov TH0, #03Ch;reload
+	mov TL0, #0AFh
+	reti
 
 ringinginterrupt:
-	push psw
+	push psw;This ISR interrupts screen interrupts, and both use the carry!
 	clr TF2
 	clr exf2
-	jb ringingonoff, endtwentyhzint
+	jb ringingonoff, endtwentyhzint;For the "beep beep" effect
 	cpl p2.2
 
 endtwentyhzint:
@@ -440,14 +450,15 @@ endtwentyhzint:
 	reti
 
 screeninterrupt:
+	;We do the one line per ISR method
 	setb rs0
 	mov r0, alm_clk
-	mov r2, #03d
-	MOV DPTR,#ZERO ; pointer goes to the first element of ZERO
+	mov r2, #03d;Display a colon every two digits
+	mov DPTR,#ZERO
 outerloop:
 	djnz r2, digit
 	mov r2, #03d
-	mov A, #010
+	mov A, #010;10 corresponds to a colon in the array defined at the beginning
 	dec r0
 	ljmp valtorepr
 digit:
@@ -455,39 +466,39 @@ digit:
 valtorepr:
 	mov B, #08d
 	mul AB
-	ADD A,R3;
-	MOVC A,@A+DPTR
+	ADD A,r3;
+	movc A,@A+DPTR
 innerloop:
-	RRC A ; rotate right and put in the carry
-	MOV datab,C ; then put the value of carry in tghe data bit 
-	SETB shiftb; we shift
-	CLR shiftb; we clear
-	DJNZ R5,innerloop; redo 5 times
-	MOV R5, #05h
+	rrc A ; rotate right and put in the carry
+	mov datab,C ; then put the value of carry in tghe data bit
+	setb shiftb; we shift
+	clr shiftb; we clear
+	djnz r5,innerloop; redo 5 times
+	mov r5, #05h
 	inc r0
 	djnz r6, outerloop
 	mov r6, #08d
 	mov r0, alm_clk
-	
-	MOV A,R7;
-	
-lines:				
-	RRC A;
-	MOV datab,C
-	SETB shiftb
-	CLR shiftb
-	DJNZ R4,lines
-	MOV R4, #08h;
-	SETB storeb
-	CLR storeb ; store bit
-	MOV A,R7 
+
+	mov A,r7;
+
+lines:
+	rrc A;
+	mov datab,C
+	setb shiftb
+	clr shiftb
+	djnz r4,lines
+	mov r4, #08h;
+	setb storeb
+	clr storeb ; store bit
+	mov A,r7
 	RR A;
-	MOV R7,A
-	DJNZ R3,endscreenint
-	MOV R3, #08h
-	
+	mov r7,A
+	djnz r3,endscreenint
+	mov r3, #08h
+
 endscreenint:
-	MOV A,R3
+	mov A,r3
 	clr rs0
 	reti
 
