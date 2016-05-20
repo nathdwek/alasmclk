@@ -79,6 +79,7 @@ init:
 	setb ET1
 	mov TL1, #00d
 	mov TH1, #00d;Slowest 8bit timer 1e6/256
+	;This is way too fast but we wanted to try an 8 bit timer w autoreload by curiosity
 	setb TR1
 
 	;timer2
@@ -483,7 +484,7 @@ innerloop:
 	inc r0
 	djnz matrix, outerloop
 	mov matrix, #08d
-	
+
 	mov A,rowmask
 activatesingleline:
 	rrc A;
