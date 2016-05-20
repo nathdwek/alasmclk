@@ -27,7 +27,7 @@ counting EQU 07;Reset value (i.e. everything running and user can't touch anythi
 
 ;single bit states
 ringingonoff EQU 02h;use to obtain the "beep...beep" effect
-almstopped EQU 03h;Is the alarm running
+almstopped BIT P2.3;Is the alarm running
 
 ;counters for clk and cnt, as well as overflow values for minutes and seconds
 alm_clk EQU 043h;This contains the address to either clk_ram or alm_ram depending on the display mode
@@ -44,6 +44,7 @@ twentyhz EQU 042h;This counter is used to go from the 20Hz timer 1 to a single s
 datab BIT P4.1
 shiftb BIT P4.0
 storeb BIT P3.2
+matrixmodtwo EQU r2
 matrixrow EQU r3
 matrixcolumn EQU r5
 matrix EQU r6
@@ -77,7 +78,7 @@ init:
 	;timer 1
 	setb ET1
 	mov TL1, #00d
-	mov TH1, #00d;Slowest 8bit timer
+	mov TH1, #00d;Slowest 8bit timer 1e6/256
 	setb TR1
 
 	;timer2
@@ -101,12 +102,12 @@ init:
 
 	;init screen stuff
 	setb rs0
-	mov r2, #02
-	mov r3, #08d ; 7 counter for Pointer
+	mov matrixmodtwo, #03d
+	mov matrixrow, #08d ; 7 counter for Pointer
 	mov r4, #08d ; 8 rows
-	mov r5, #05d
-	mov r7, #11111110b;
-	mov r6, #08d
+	mov matrixcolumn, #05d
+	mov rowmask, #11111110b;
+	mov matrix, #08d
 	clr shiftb
 	clr datab
 	clr storeb
@@ -233,7 +234,6 @@ nextstate:
 	jb P2.5, readswitch;If in alarm mode, stop the alarm and the buzzer
 	setb almstopped
 	clr TR2
-	ljmp readswitch
 
 readswitch:
 	jb P2.5, swclk
@@ -255,7 +255,7 @@ swdiff:
 switchtoreadkb:
 	jb TR2, readkb;If buzzer ringing, allow read kb because user can snooze or stop
 	cjne state, #counting, readkb;If state allows user to set up alarm or clock, read kb
-	ljmp endfiftymsinterrupt;Else, not
+	ljmp endtwentyhzisr;Else, not
 
 readkb:
 	mov P0, #00Fh;First check if any key is pressed
@@ -265,7 +265,7 @@ readkb:
 	jnb  P0.1,c1
 	jnb  P0.2,c2
 	jnb  P0.3,c3
-	ljmp endfiftymsinterrupt
+	ljmp endtwentyhzisr
 
 waitrelease:
 	jnb  P0.0,stilldown
@@ -276,7 +276,7 @@ waitrelease:
 	ljmp digitreleased
 
 stilldown:
-	ljmp endfiftymsinterrupt
+	ljmp endtwentyhzisr
 
 c0:
 	mov P0, #000111111b
@@ -289,7 +289,7 @@ c0r1r2:
 	jmp epushed
 
 fpushed:
-	ljmp endfiftymsinterrupt
+	ljmp endtwentyhzisr
 
 c0r3r4:
 	mov P0, #011101111b
@@ -299,7 +299,7 @@ c0r3r4:
 stoppushed:
 	clr TR2
 	setb almstopped
-	ljmp endfiftymsinterrupt
+	ljmp endtwentyhzisr
 
 c1:
 	mov P0, #000111111b
@@ -321,7 +321,7 @@ c1r3r4:
 	jmp threepushed
 
 bpushed:
-	ljmp endfiftymsinterrupt
+	ljmp endtwentyhzisr
 
 c2:
 	mov P0, #000111111b
@@ -384,17 +384,17 @@ eightpushed:
 ;Those don't do anything
 apushed:
 epushed:
-	ljmp endfiftymsinterrupt
+	ljmp endtwentyhzisr
 
 snoozepushed:
-	jnb Tr2, endfiftymsinterrupt
-	clr Tr2
+	jnb TR2, endtwentyhzisr
+	clr TR2
 	mov 038h, #03d;3minutes
-	ljmp endfiftymsinterrupt
+	ljmp endtwentyhzisr
 
 digitpressed:
 	setb digitdown
-	ljmp endfiftymsinterrupt
+	ljmp endtwentyhzisr
 
 digitreleased:
 	;Check if value is within boundaries and if so load it in the adequate digit
@@ -406,12 +406,12 @@ digitreleased:
 	mov r0, thedigitdown
 	inc r0
 	subb A, r0
-	jc endfiftymsinterrupt
+	jc endtwentyhzisr
 	jnb p2.5, usedigit
 	cjne state, #06d, chkhourfurther
 	mov A, #02d
 	subb A, thedigitdown
-	jc endfiftymsinterrupt
+	jc endtwentyhzisr
 	ljmp usedigit
 
 chkhourfurther:
@@ -420,7 +420,7 @@ chkhourfurther:
 	cjne r7, #02d, usedigit
 	mov A, #03d
 	subb A, thedigitdown
-	jc endfiftymsinterrupt
+	jc endtwentyhzisr
 
 usedigit:
 	mov A, alm_clk
@@ -429,16 +429,16 @@ usedigit:
 	mov r0, A
 	mov A, thedigitdown
 	mov @r0, A
-	djnz state, endfiftymsinterrupt
+	djnz state, endtwentyhzisr
 	mov state, #counting
 	jb p2.5, shutled
 	clr almstopped;When the user has set all alarm digits, immediately start the alarm
 
 shutled:
 	setb p2.4
-	ljmp endfiftymsinterrupt
+	ljmp endtwentyhzisr
 
-endfiftymsinterrupt:
+endtwentyhzisr:
 	mov TH0, #03Ch;reload
 	mov TL0, #0AFh
 	reti
@@ -447,10 +447,10 @@ ringinginterrupt:
 	push psw;This ISR interrupts screen interrupts, and both use the carry!
 	clr TF2
 	clr exf2
-	jb ringingonoff, endtwentyhzint;For the "beep beep" effect
+	jb ringingonoff, endbuzzerint;For the "beep beep" effect
 	cpl p2.2
 
-endtwentyhzint:
+endbuzzerint:
 	pop psw
 	reti
 
@@ -458,11 +458,11 @@ screeninterrupt:
 	;We do the one line per ISR method
 	setb rs0
 	mov r0, alm_clk
-	mov r2, #03d;Display a colon every two digits
+	mov matrixmodtwo, #03d;Display a colon every two digits
 	mov DPTR,#ZERO
 outerloop:
-	djnz r2, digit
-	mov r2, #03d
+	djnz matrixmodtwo, digit
+	mov matrixmodtwo, #03d
 	mov A, #010;10 corresponds to a colon in the array defined at the beginning
 	dec r0
 	ljmp valtorepr
@@ -483,8 +483,8 @@ innerloop:
 	inc r0
 	djnz matrix, outerloop
 	mov matrix, #08d
+	
 	mov A,rowmask
-
 activatesingleline:
 	rrc A;
 	mov datab,C
@@ -493,7 +493,7 @@ activatesingleline:
 	djnz r4, activatesingleline
 	mov r4, #08h;
 	setb storeb
-	clr storeb ; store bit
+	clr storeb
 	mov A,rowmask
 	rr A;
 	mov rowmask,A
