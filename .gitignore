@@ -1,3 +1,12 @@
 Objects/
 Listings/
 *.orig
+
+*.aux
+*.out
+*.fls
+*.lof
+*.lol
+*.toc
+*.fdb_latexmk
+*.log
